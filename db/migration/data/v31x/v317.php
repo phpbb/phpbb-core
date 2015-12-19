@@ -11,20 +11,21 @@
 *
 */
 
-namespace phpbb\textreparser\plugins;
+namespace phpbb\db\migration\data\v31x;
 
-class group_description extends \phpbb\textreparser\row_based_plugin
+class v317 extends \phpbb\db\migration\migration
 {
-	/**
-	* {@inheritdoc}
-	*/
-	public function get_columns()
+	static public function depends_on()
 	{
 		return array(
-			'id'         => 'group_id',
-			'text'       => 'group_desc',
-			'bbcode_uid' => 'group_desc_uid',
-			'options'    => 'group_desc_options',
+			'\phpbb\db\migration\data\v31x\v317rc1',
+		);
+	}
+
+	public function update_data()
+	{
+		return array(
+			array('config.update', array('version', '3.1.7')),
 		);
 	}
 }

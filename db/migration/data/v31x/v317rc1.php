@@ -11,21 +11,22 @@
 *
 */
 
-namespace phpbb\db\migration\data\v320;
+namespace phpbb\db\migration\data\v31x;
 
-class allowed_schemes_links extends \phpbb\db\migration\migration
+class v317rc1 extends \phpbb\db\migration\migration
 {
 	static public function depends_on()
 	{
 		return array(
-			'\phpbb\db\migration\data\v320\dev',
+			'\phpbb\db\migration\data\v31x\m_pm_report',
+			'\phpbb\db\migration\data\v31x\v316',
 		);
 	}
 
 	public function update_data()
 	{
 		return array(
-			array('config.add', array('allowed_schemes_links', 'http,https,ftp')),
+			array('config.update', array('version', '3.1.7-RC1')),
 		);
 	}
 }

@@ -11,23 +11,23 @@
 *
 */
 
-namespace phpbb\db\migration\data\v320;
+namespace phpbb\db\migration\data\v31x;
 
-class report_id_auto_increment extends \phpbb\db\migration\migration
+class add_log_time_index extends \phpbb\db\migration\migration
 {
 	static public function depends_on()
 	{
 		return array(
-			'\phpbb\db\migration\data\v320\default_data_type_ids',
+			'\phpbb\db\migration\data\v31x\v319',
 		);
 	}
 
 	public function update_schema()
 	{
 		return array(
-			'change_columns'	=> array(
-				$this->table_prefix . 'reports'				=> array(
-					'report_id'		=> array('ULINT', null, 'auto_increment'),
+			'add_index' => array(
+				$this->table_prefix . 'log' => array(
+					'log_time'	=> array('log_time'),
 				),
 			),
 		);
@@ -36,9 +36,9 @@ class report_id_auto_increment extends \phpbb\db\migration\migration
 	public function revert_schema()
 	{
 		return array(
-			'change_columns'	=> array(
-				$this->table_prefix . 'reports'				=> array(
-					'report_id'		=> array('ULINT', 0),
+			'drop_keys' => array(
+				$this->table_prefix . 'log' => array(
+					'log_time',
 				),
 			),
 		);

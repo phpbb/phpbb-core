@@ -11,21 +11,21 @@
 *
 */
 
-namespace phpbb\db\migration\data\v310;
+namespace phpbb\db\migration\data\v330;
 
-class contact_admin_acp_module extends \phpbb\db\migration\migration
+class acp_storage_module extends \phpbb\db\migration\migration
 {
 	public function update_data()
 	{
 		return array(
 			array('module.add', array(
 				'acp',
-				'ACP_BOARD_CONFIGURATION',
+				'ACP_SERVER_CONFIGURATION',
 				array(
-					'module_basename'	=> 'acp_contact',
-					'module_langname'	=> 'ACP_CONTACT_SETTINGS',
-					'module_mode'		=> 'contact',
-					'module_auth'		=> 'acl_a_board',
+					'module_basename'	=> 'acp_storage',
+					'module_langname'	=> 'ACP_STORAGE_SETTINGS',
+					'module_mode'		=> 'settings',
+					'module_auth'		=> 'acl_a_storage',
 				),
 			)),
 		);

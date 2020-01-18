@@ -11,24 +11,26 @@
 *
 */
 
-namespace phpbb\db\migration\data\v330;
+namespace phpbb\db\migration\data\v400;
 
-class add_display_unapproved_posts_config extends \phpbb\db\migration\migration
+use phpbb\db\migration\migration;
+
+class dev extends migration
 {
 	public function effectively_installed()
 	{
-		return $this->config->offsetExists('display_unapproved_posts');
+		return version_compare($this->config['version'], '4.0.0-dev', '>=');
 	}
 
-	public static function depends_on()
+	static public function depends_on()
 	{
-		return ['\phpbb\db\migration\data\v330\dev',];
+		return ['\phpbb\db\migration\data\v330\v330rc1'];
 	}
 
 	public function update_data()
 	{
 		return [
-			['config.add', ['display_unapproved_posts', 1]],
+			['config.update', ['version', '4.0.0-dev']],
 		];
 	}
 }

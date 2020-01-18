@@ -13,14 +13,25 @@
 
 namespace phpbb\db\migration\data\v330;
 
-class storage_avatar extends \phpbb\db\migration\migration
+class v330 extends \phpbb\db\migration\migration
 {
+	public function effectively_installed()
+	{
+		return version_compare($this->config['version'], '3.3.0', '>=');
+	}
+
+	static public function depends_on()
+	{
+		return array(
+			'\phpbb\db\migration\data\v32x\v329',
+			'\phpbb\db\migration\data\v330\v330rc1',
+		);
+	}
+
 	public function update_data()
 	{
 		return array(
-			array('config.add', array('storage\\avatar\\provider', \phpbb\storage\provider\local::class)),
-			array('config.add', array('storage\\avatar\\config\\path', $this->config['avatar_path'])),
-			array('config.remove', array('avatar_path')),
+			array('config.update', array('version', '3.3.0')),
 		);
 	}
 }

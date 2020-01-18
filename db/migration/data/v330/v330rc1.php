@@ -13,14 +13,24 @@
 
 namespace phpbb\db\migration\data\v330;
 
-class storage_attachment extends \phpbb\db\migration\migration
+class v330rc1 extends \phpbb\db\migration\migration
 {
+	public function effectively_installed()
+	{
+		return version_compare($this->config['version'], '3.3.0-RC1', '>=');
+	}
+
+	static public function depends_on()
+	{
+		return array(
+			'\phpbb\db\migration\data\v330\v330b2',
+		);
+	}
+
 	public function update_data()
 	{
 		return array(
-			array('config.add', array('storage\\attachment\\provider', \phpbb\storage\provider\local::class)),
-			array('config.add', array('storage\\attachment\\config\\path', $this->config['upload_path'])),
-			array('config.remove', array('upload_path')),
+			array('config.update', array('version', '3.3.0-RC1')),
 		);
 	}
 }

@@ -11,29 +11,27 @@
 *
 */
 
-namespace phpbb\db\migration\data\v330;
+namespace phpbb\db\migration\data\v32x;
 
-class v330b2 extends \phpbb\db\migration\migration
+class v329 extends \phpbb\db\migration\migration
 {
 	public function effectively_installed()
 	{
-		return version_compare($this->config['version'], '3.3.0-b2', '>=');
+		return phpbb_version_compare($this->config['version'], '3.2.9', '>=');
 	}
 
 	static public function depends_on()
 	{
 		return array(
-			'\phpbb\db\migration\data\v330\add_display_unapproved_posts_config',
-			'\phpbb\db\migration\data\v330\forums_legend_limit',
-			'\phpbb\db\migration\data\v330\remove_email_hash',
-			'\phpbb\db\migration\data\v330\v330b1',
+			'\phpbb\db\migration\data\v32x\v329rc1',
+			'\phpbb\db\migration\data\v32x\user_emoji_permission',
 		);
 	}
 
 	public function update_data()
 	{
 		return array(
-			array('config.update', array('version', '3.3.0-b2')),
+			array('config.update', array('version', '3.2.9')),
 		);
 	}
 }

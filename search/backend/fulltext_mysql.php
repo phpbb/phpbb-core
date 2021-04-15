@@ -11,12 +11,19 @@
 *
 */
 
-namespace phpbb\search;
+namespace phpbb\search\backend;
+
+use phpbb\config\config;
+use phpbb\db\driver\driver_interface;
+use phpbb\event\dispatcher_interface;
+use phpbb\language\language;
+use phpbb\user;
+use RuntimeException;
 
 /**
 * Fulltext search for MySQL
 */
-class fulltext_mysql extends \phpbb\search\base
+class fulltext_mysql extends base implements search_backend_interface
 {
 	/**
 	 * Associative array holding index stats
@@ -31,28 +38,15 @@ class fulltext_mysql extends \phpbb\search\base
 	protected $split_words = array();
 
 	/**
-	 * Config object
-	 * @var \phpbb\config\config
-	 */
-	protected $config;
-
-	/**
-	 * Database connection
-	 * @var \phpbb\db\driver\driver_interface
-	 */
-	protected $db;
-
-	/**
 	 * phpBB event dispatcher object
-	 * @var \phpbb\event\dispatcher_interface
+	 * @var dispatcher_interface
 	 */
 	protected $phpbb_dispatcher;
 
 	/**
-	 * User object
-	 * @var \phpbb\user
+	 * @var language
 	 */
-	protected $user;
+	protected $language;
 
 	/**
 	 * Associative array stores the min and max word length to be searched
@@ -76,23 +70,23 @@ class fulltext_mysql extends \phpbb\search\base
 
 	/**
 	 * Constructor
-	 * Creates a new \phpbb\search\fulltext_mysql, which is used as a search backend
+	 * Creates a new \phpbb\search\backend\fulltext_mysql, which is used as a search backend
 	 *
-	 * @param string|bool $error Any error that occurs is passed on through this reference variable otherwise false
+	 * @param config $config Config object
+	 * @param driver_interface $db Database object
+	 * @param dispatcher_interface $phpbb_dispatcher Event dispatcher object
+	 * @param language $language
+	 * @param user $user User object
 	 * @param string $phpbb_root_path Relative path to phpBB root
 	 * @param string $phpEx PHP file extension
-	 * @param \phpbb\auth\auth $auth Auth object
-	 * @param \phpbb\config\config $config Config object
-	 * @param \phpbb\db\driver\driver_interface $db Database object
-	 * @param \phpbb\user $user User object
-	 * @param \phpbb\event\dispatcher_interface	$phpbb_dispatcher	Event dispatcher object
 	 */
-	public function __construct(&$error, $phpbb_root_path, $phpEx, $auth, $config, $db, $user, $phpbb_dispatcher)
+	public function __construct(config $config, driver_interface $db, dispatcher_interface $phpbb_dispatcher, language $language, user $user, string $phpbb_root_path, string $phpEx)
 	{
-		$this->config = $config;
-		$this->db = $db;
+		global $cache;
+
+		parent::__construct($cache, $config, $db, $user);
 		$this->phpbb_dispatcher = $phpbb_dispatcher;
-		$this->user = $user;
+		$this->language = $language;
 
 		$this->word_length = array('min' => $this->config['fulltext_mysql_min_word_len'], 'max' => $this->config['fulltext_mysql_max_word_len']);
 
@@ -103,75 +97,45 @@ class fulltext_mysql extends \phpbb\search\base
 		{
 			include($phpbb_root_path . 'includes/utf/utf_tools.' . $phpEx);
 		}
-
-		$error = false;
 	}
 
 	/**
-	* Returns the name of this search backend to be displayed to administrators
-	*
-	* @return string Name
-	*/
-	public function get_name()
+	 * {@inheritdoc}
+	 */
+	public function get_name(): string
 	{
 		return 'MySQL Fulltext';
 	}
 
 	/**
-	 * Returns the search_query
-	 *
-	 * @return string search query
+	 * {@inheritdoc}
 	 */
-	public function get_search_query()
+	public function is_available(): bool
 	{
-		return $this->search_query;
-	}
-
-	/**
-	 * Returns the common_words array
-	 *
-	 * @return array common words that are ignored by search backend
-	 */
-	public function get_common_words()
-	{
-		return $this->common_words;
-	}
-
-	/**
-	 * Returns the word_length array
-	 *
-	 * @return array min and max word length for searching
-	 */
-	public function get_word_length()
-	{
-		return $this->word_length;
-	}
-
-	/**
-	* Checks for correct MySQL version and stores min/max word length in the config
-	*
-	* @return string|bool Language key of the error/incompatibility occurred
-	*/
-	public function init()
-	{
+		// Check if we are using mysql
 		if ($this->db->get_sql_layer() != 'mysqli')
 		{
-			return $this->user->lang['FULLTEXT_MYSQL_INCOMPATIBLE_DATABASE'];
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function init()
+	{
+		if (!$this->is_available())
+		{
+			return $this->language->lang('FULLTEXT_MYSQL_INCOMPATIBLE_DATABASE');
 		}
 
 		$result = $this->db->sql_query('SHOW TABLE STATUS LIKE \'' . POSTS_TABLE . '\'');
 		$info = $this->db->sql_fetchrow($result);
 		$this->db->sql_freeresult($result);
 
-		$engine = '';
-		if (isset($info['Engine']))
-		{
-			$engine = $info['Engine'];
-		}
-		else if (isset($info['Type']))
-		{
-			$engine = $info['Type'];
-		}
+		$engine = $info['Engine'] ?? $info['Type'] ?? '';
 
 		$fulltext_supported = $engine === 'Aria' || $engine === 'MyISAM'
 			/**
@@ -180,12 +144,12 @@ class fulltext_mysql extends \phpbb\search\base
 			 * We also require https://bugs.mysql.com/bug.php?id=67004 to be
 			 * fixed for proper overall operation. Hence we require 5.6.8.
 			 */
-			|| $engine === 'InnoDB'
-			&& phpbb_version_compare($this->db->sql_server_info(true), '5.6.8', '>=');
+			|| ($engine === 'InnoDB'
+				&& phpbb_version_compare($this->db->sql_server_info(true), '5.6.8', '>='));
 
 		if (!$fulltext_supported)
 		{
-			return $this->user->lang['FULLTEXT_MYSQL_NOT_SUPPORTED'];
+			return $this->language->lang('FULLTEXT_MYSQL_NOT_SUPPORTED');
 		}
 
 		$sql = 'SHOW VARIABLES
@@ -214,14 +178,33 @@ class fulltext_mysql extends \phpbb\search\base
 	}
 
 	/**
-	* Splits keywords entered by a user into an array of words stored in $this->split_words
-	* Stores the tidied search query in $this->search_query
-	*
-	* @param string &$keywords Contains the keyword as entered by the user
-	* @param string $terms is either 'all' or 'any'
-	* @return bool false if no valid keywords were found and otherwise true
-	*/
-	public function split_keywords(&$keywords, $terms)
+	 * {@inheritdoc}
+	 */
+	public function get_search_query(): string
+	{
+		return $this->search_query;
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function get_common_words(): array
+	{
+		return $this->common_words;
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function get_word_length()
+	{
+		return $this->word_length;
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function split_keywords(string &$keywords, string $terms): bool
 	{
 		if ($terms == 'all')
 		{
@@ -232,7 +215,7 @@ class fulltext_mysql extends \phpbb\search\base
 		}
 
 		// Filter out as above
-		$split_keywords = preg_replace("#[\n\r\t]+#", ' ', trim(htmlspecialchars_decode($keywords)));
+		$split_keywords = preg_replace("#[\n\r\t]+#", ' ', trim(htmlspecialchars_decode($keywords, ENT_COMPAT)));
 
 		// Split words
 		$split_keywords = preg_replace('#([^\p{L}\p{N}\'*"()])#u', '$1$1', str_replace('\'\'', '\' \'', trim($split_keywords)));
@@ -243,7 +226,7 @@ class fulltext_mysql extends \phpbb\search\base
 		// We limit the number of allowed keywords to minimize load on the database
 		if ($this->config['max_num_search_keywords'] && count($this->split_words) > $this->config['max_num_search_keywords'])
 		{
-			trigger_error($this->user->lang('MAX_NUM_SEARCH_KEYWORDS_REFINE', (int) $this->config['max_num_search_keywords'], count($this->split_words)));
+			trigger_error($this->language->lang('MAX_NUM_SEARCH_KEYWORDS_REFINE', (int) $this->config['max_num_search_keywords'], count($this->split_words)));
 		}
 
 		// to allow phrase search, we need to concatenate quoted words
@@ -357,52 +340,9 @@ class fulltext_mysql extends \phpbb\search\base
 	}
 
 	/**
-	* Turns text into an array of words
-	* @param string $text contains post text/subject
-	*/
-	public function split_message($text)
-	{
-		// Split words
-		$text = preg_replace('#([^\p{L}\p{N}\'*])#u', '$1$1', str_replace('\'\'', '\' \'', trim($text)));
-		$matches = array();
-		preg_match_all('#(?:[^\p{L}\p{N}*]|^)([+\-|]?(?:[\p{L}\p{N}*]+\'?)*[\p{L}\p{N}*])(?:[^\p{L}\p{N}*]|$)#u', $text, $matches);
-		$text = $matches[1];
-
-		// remove too short or too long words
-		$text = array_values($text);
-		for ($i = 0, $n = count($text); $i < $n; $i++)
-		{
-			$text[$i] = trim($text[$i]);
-			if (utf8_strlen($text[$i]) < $this->config['fulltext_mysql_min_word_len'] || utf8_strlen($text[$i]) > $this->config['fulltext_mysql_max_word_len'])
-			{
-				unset($text[$i]);
-			}
-		}
-
-		return array_values($text);
-	}
-
-	/**
-	* Performs a search on keywords depending on display specific params. You have to run split_keywords() first
-	*
-	* @param	string		$type				contains either posts or topics depending on what should be searched for
-	* @param	string		$fields				contains either titleonly (topic titles should be searched), msgonly (only message bodies should be searched), firstpost (only subject and body of the first post should be searched) or all (all post bodies and subjects should be searched)
-	* @param	string		$terms				is either 'all' (use query as entered, words without prefix should default to "have to be in field") or 'any' (ignore search query parts and just return all posts that contain any of the specified words)
-	* @param	array		$sort_by_sql		contains SQL code for the ORDER BY part of a query
-	* @param	string		$sort_key			is the key of $sort_by_sql for the selected sorting
-	* @param	string		$sort_dir			is either a or d representing ASC and DESC
-	* @param	string		$sort_days			specifies the maximum amount of days a post may be old
-	* @param	array		$ex_fid_ary			specifies an array of forum ids which should not be searched
-	* @param	string		$post_visibility	specifies which types of posts the user can view in which forums
-	* @param	int			$topic_id			is set to 0 or a topic id, if it is not 0 then only posts in this topic should be searched
-	* @param	array		$author_ary			an array of author ids if the author should be ignored during the search the array is empty
-	* @param	string		$author_name		specifies the author match, when ANONYMOUS is also a search-match
-	* @param	array		&$id_ary			passed by reference, to be filled with ids for the page specified by $start and $per_page, should be ordered
-	* @param	int			$start				indicates the first index of the page
-	* @param	int			$per_page			number of ids each page is supposed to contain
-	* @return	boolean|int						total number of results
-	*/
-	public function keyword_search($type, $fields, $terms, $sort_by_sql, $sort_key, $sort_dir, $sort_days, $ex_fid_ary, $post_visibility, $topic_id, $author_ary, $author_name, &$id_ary, &$start, $per_page)
+	 * {@inheritdoc}
+	 */
+	public function keyword_search(string $type, string $fields, string $terms, array $sort_by_sql, string $sort_key, string $sort_dir, string $sort_days, array $ex_fid_ary, string $post_visibility, int $topic_id, array $author_ary, string $author_name, array &$id_ary, int &$start, int $per_page)
 	{
 		// No keywords? No posts
 		if (!$this->search_query)
@@ -463,7 +403,7 @@ class fulltext_mysql extends \phpbb\search\base
 
 		// try reading the results from cache
 		$result_count = 0;
-		if ($this->obtain_ids($search_key, $result_count, $id_ary, $start, $per_page, $sort_dir) == SEARCH_RESULT_IN_CACHE)
+		if ($this->obtain_ids($search_key, $result_count, $id_ary, $start, $per_page, $sort_dir) == self::SEARCH_RESULT_IN_CACHE)
 		{
 			return $result_count;
 		}
@@ -597,7 +537,7 @@ class fulltext_mysql extends \phpbb\search\base
 
 		$sql = "SELECT $sql_select
 			FROM $sql_from$sql_sort_table" . POSTS_TABLE . " p
-			WHERE MATCH ($sql_match) AGAINST ('" . $this->db->sql_escape(htmlspecialchars_decode($this->search_query)) . "' IN BOOLEAN MODE)
+			WHERE MATCH ($sql_match) AGAINST ('" . $this->db->sql_escape(htmlspecialchars_decode($this->search_query, ENT_COMPAT)) . "' IN BOOLEAN MODE)
 				$sql_where_options
 			ORDER BY $sql_sort";
 		$this->db->sql_return_on_error(true);
@@ -648,25 +588,9 @@ class fulltext_mysql extends \phpbb\search\base
 	}
 
 	/**
-	* Performs a search on an author's posts without caring about message contents. Depends on display specific params
-	*
-	* @param	string		$type				contains either posts or topics depending on what should be searched for
-	* @param	boolean		$firstpost_only		if true, only topic starting posts will be considered
-	* @param	array		$sort_by_sql		contains SQL code for the ORDER BY part of a query
-	* @param	string		$sort_key			is the key of $sort_by_sql for the selected sorting
-	* @param	string		$sort_dir			is either a or d representing ASC and DESC
-	* @param	string		$sort_days			specifies the maximum amount of days a post may be old
-	* @param	array		$ex_fid_ary			specifies an array of forum ids which should not be searched
-	* @param	string		$post_visibility	specifies which types of posts the user can view in which forums
-	* @param	int			$topic_id			is set to 0 or a topic id, if it is not 0 then only posts in this topic should be searched
-	* @param	array		$author_ary			an array of author ids
-	* @param	string		$author_name		specifies the author match, when ANONYMOUS is also a search-match
-	* @param	array		&$id_ary			passed by reference, to be filled with ids for the page specified by $start and $per_page, should be ordered
-	* @param	int			$start				indicates the first index of the page
-	* @param	int			$per_page			number of ids each page is supposed to contain
-	* @return	boolean|int						total number of results
-	*/
-	public function author_search($type, $firstpost_only, $sort_by_sql, $sort_key, $sort_dir, $sort_days, $ex_fid_ary, $post_visibility, $topic_id, $author_ary, $author_name, &$id_ary, &$start, $per_page)
+	 * {@inheritdoc}
+	 */
+	public function author_search(string $type, bool $firstpost_only, array $sort_by_sql, string $sort_key, string $sort_dir, string $sort_days, array $ex_fid_ary, string $post_visibility, int $topic_id, array $author_ary, string $author_name, array &$id_ary, int &$start, int $per_page)
 	{
 		// No author? No posts
 		if (!count($author_ary))
@@ -729,7 +653,7 @@ class fulltext_mysql extends \phpbb\search\base
 
 		// try reading the results from cache
 		$result_count = 0;
-		if ($this->obtain_ids($search_key, $result_count, $id_ary, $start, $per_page, $sort_dir) == SEARCH_RESULT_IN_CACHE)
+		if ($this->obtain_ids($search_key, $result_count, $id_ary, $start, $per_page, $sort_dir) == self::SEARCH_RESULT_IN_CACHE)
 		{
 			return $result_count;
 		}
@@ -910,16 +834,17 @@ class fulltext_mysql extends \phpbb\search\base
 	}
 
 	/**
-	* Destroys cached search results, that contained one of the new words in a post so the results won't be outdated
-	*
-	* @param	string		$mode contains the post mode: edit, post, reply, quote ...
-	* @param	int			$post_id	contains the post id of the post to index
-	* @param	string		$message	contains the post text of the post
-	* @param	string		$subject	contains the subject of the post to index
-	* @param	int			$poster_id	contains the user id of the poster
-	* @param	int			$forum_id	contains the forum id of parent forum of the post
-	*/
-	public function index($mode, $post_id, &$message, &$subject, $poster_id, $forum_id)
+	 * {@inheritdoc}
+	 */
+	public function supports_phrase_search(): bool
+	{
+		return false;
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function index(string $mode, int $post_id, string &$message, string &$subject, int $poster_id, int $forum_id)
 	{
 		// Split old and new post/subject to obtain array of words
 		$split_text = $this->split_message($message);
@@ -955,8 +880,7 @@ class fulltext_mysql extends \phpbb\search\base
 		);
 		extract($this->phpbb_dispatcher->trigger_event('core.search_mysql_index_before', compact($vars)));
 
-		unset($split_text);
-		unset($split_title);
+		unset($split_text, $split_title);
 
 		// destroy cached search results containing any of the words removed or added
 		$this->destroy_cache($words, array($poster_id));
@@ -965,35 +889,33 @@ class fulltext_mysql extends \phpbb\search\base
 	}
 
 	/**
-	* Destroy cached results, that might be outdated after deleting a post
-	*/
-	public function index_remove($post_ids, $author_ids, $forum_ids)
+	 * {@inheritdoc}
+	 */
+	public function index_remove(array $post_ids, array $author_ids, array $forum_ids): void
 	{
-		$this->destroy_cache(array(), array_unique($author_ids));
+		$this->destroy_cache([], array_unique($author_ids));
 	}
 
 	/**
-	* Destroy old cache entries
-	*/
-	public function tidy()
+	 * {@inheritdoc}
+	 */
+	public function tidy(): void
 	{
 		// destroy too old cached search results
-		$this->destroy_cache(array());
+		$this->destroy_cache([]);
 
 		$this->config->set('search_last_gc', time(), false);
 	}
 
 	/**
-	* Create fulltext index
-	*
-	* @return string|bool error string is returned incase of errors otherwise false
-	*/
-	public function create_index($acp_module, $u_action)
+	 * {@inheritdoc}
+	 */
+	public function create_index(int &$post_counter = 0): ?array
 	{
 		// Make sure we can actually use MySQL with fulltext indexes
 		if ($error = $this->init())
 		{
-			return $error;
+			throw new RuntimeException($error);
 		}
 
 		if (empty($this->stats))
@@ -1054,20 +976,18 @@ class fulltext_mysql extends \phpbb\search\base
 
 		$this->db->sql_query('TRUNCATE TABLE ' . SEARCH_RESULTS_TABLE);
 
-		return false;
+		return null;
 	}
 
 	/**
-	* Drop fulltext index
-	*
-	* @return string|bool error string is returned incase of errors otherwise false
-	*/
-	public function delete_index($acp_module, $u_action)
+	 * {@inheritdoc}
+	 */
+	public function delete_index(int &$post_counter = null): ?array
 	{
 		// Make sure we can actually use MySQL with fulltext indexes
 		if ($error = $this->init())
 		{
-			return $error;
+			throw new RuntimeException($error);
 		}
 
 		if (empty($this->stats))
@@ -1122,13 +1042,13 @@ class fulltext_mysql extends \phpbb\search\base
 
 		$this->db->sql_query('TRUNCATE TABLE ' . SEARCH_RESULTS_TABLE);
 
-		return false;
+		return null;
 	}
 
 	/**
-	* Returns true if both FULLTEXT indexes exist
+	 * {@inheritdoc}
 	*/
-	public function index_created()
+	public function index_created(): bool
 	{
 		if (empty($this->stats))
 		{
@@ -1139,8 +1059,8 @@ class fulltext_mysql extends \phpbb\search\base
 	}
 
 	/**
-	* Returns an associative array containing information about the indexes
-	*/
+	 * {@inheritdoc}
+	 */
 	public function index_stats()
 	{
 		if (empty($this->stats))
@@ -1149,7 +1069,7 @@ class fulltext_mysql extends \phpbb\search\base
 		}
 
 		return array(
-			$this->user->lang['FULLTEXT_MYSQL_TOTAL_POSTS']			=> ($this->index_created()) ? $this->stats['total_posts'] : 0,
+			$this->language->lang('FULLTEXT_MYSQL_TOTAL_POSTS')			=> ($this->index_created()) ? $this->stats['total_posts'] : 0,
 		);
 	}
 
@@ -1195,19 +1115,45 @@ class fulltext_mysql extends \phpbb\search\base
 	}
 
 	/**
-	* Display a note, that UTF-8 support is not available with certain versions of PHP
-	*
-	* @return associative array containing template and config variables
-	*/
-	public function acp()
+	 * Turns text into an array of words
+	 * @param string $text contains post text/subject
+	 *
+	 * @return array
+	 */
+	protected function split_message($text): array
+	{
+		// Split words
+		$text = preg_replace('#([^\p{L}\p{N}\'*])#u', '$1$1', str_replace('\'\'', '\' \'', trim($text)));
+		$matches = array();
+		preg_match_all('#(?:[^\p{L}\p{N}*]|^)([+\-|]?(?:[\p{L}\p{N}*]+\'?)*[\p{L}\p{N}*])(?:[^\p{L}\p{N}*]|$)#u', $text, $matches);
+		$text = $matches[1];
+
+		// remove too short or too long words
+		$text = array_values($text);
+		for ($i = 0, $n = count($text); $i < $n; $i++)
+		{
+			$text[$i] = trim($text[$i]);
+			if (utf8_strlen($text[$i]) < $this->config['fulltext_mysql_min_word_len'] || utf8_strlen($text[$i]) > $this->config['fulltext_mysql_max_word_len'])
+			{
+				unset($text[$i]);
+			}
+		}
+
+		return array_values($text);
+	}
+
+	/**
+	 * {@inheritdoc}
+	 */
+	public function get_acp_options(): array
 	{
 		$tpl = '
 		<dl>
-			<dt><label>' . $this->user->lang['MIN_SEARCH_CHARS'] . $this->user->lang['COLON'] . '</label><br /><span>' . $this->user->lang['FULLTEXT_MYSQL_MIN_SEARCH_CHARS_EXPLAIN'] . '</span></dt>
+			<dt><label>' . $this->language->lang('MIN_SEARCH_CHARS') . $this->language->lang('COLON') . '</label><br /><span>' . $this->language->lang('FULLTEXT_MYSQL_MIN_SEARCH_CHARS_EXPLAIN') . '</span></dt>
 			<dd>' . $this->config['fulltext_mysql_min_word_len'] . '</dd>
 		</dl>
 		<dl>
-			<dt><label>' . $this->user->lang['MAX_SEARCH_CHARS'] . $this->user->lang['COLON'] . '</label><br /><span>' . $this->user->lang['FULLTEXT_MYSQL_MAX_SEARCH_CHARS_EXPLAIN'] . '</span></dt>
+			<dt><label>' . $this->language->lang('MAX_SEARCH_CHARS') . $this->language->lang('COLON') . '</label><br /><span>' . $this->language->lang('FULLTEXT_MYSQL_MAX_SEARCH_CHARS_EXPLAIN') . '</span></dt>
 			<dd>' . $this->config['fulltext_mysql_max_word_len'] . '</dd>
 		</dl>
 		';

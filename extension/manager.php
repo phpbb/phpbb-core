@@ -32,6 +32,7 @@ class manager
 	protected $cache;
 	protected $extensions;
 	protected $extension_table;
+	protected $filesystem;
 	protected $phpbb_root_path;
 	protected $cache_name;
 

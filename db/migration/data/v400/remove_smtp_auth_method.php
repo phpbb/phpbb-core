@@ -14,13 +14,12 @@
 namespace phpbb\db\migration\data\v400;
 
 use phpbb\db\migration\migration;
-use phpbb\storage\provider\local;
 
-class storage_attachment extends migration
+class remove_smtp_auth_method extends migration
 {
 	public function effectively_installed()
 	{
-		return $this->config->offsetExists('storage\\attachment\\provider');
+		return !$this->config->offsetExists('smtp_auth_method');
 	}
 
 	public static function depends_on()
@@ -33,18 +32,14 @@ class storage_attachment extends migration
 	public function update_data()
 	{
 		return [
-			['config.add', ['storage\\attachment\\provider', local::class]],
-			['config.add', ['storage\\attachment\\config\\path', $this->config['upload_path']]],
-			['config.remove', ['upload_path']],
+			['config.remove', ['smtp_auth_method']],
 		];
 	}
 
 	public function revert_data()
 	{
 		return [
-			['config.remove', ['storage\\attachment\\provider']],
-			['config.remove', ['storage\\attachment\\config\\path']],
-			['config.add', ['upload_path', 'files']],
+			['config.add', ['smtp_auth_method', 'PLAIN']],
 		];
 	}
 }
